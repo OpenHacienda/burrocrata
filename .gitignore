@@ -1,0 +1,61 @@
+# Nix build results
+result
+result-*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+wheels/
+*.egg-link
+.installed.cfg
+lib/
+lib64/
+.eggs/
+*.manifest
+*.spec
+
+# Virtual environments (uv / venv)
+.venv/
+venv/
+ENV/
+env/
+.env
+
+# uv
+.uv/
+uv.lock
+
+# mypy / pyright type caches
+.mypy_cache/
+.pyright/
+pyrightconfig.json
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ruff cache
+.ruff_cache/
+
+# direnv
+.direnv/
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
