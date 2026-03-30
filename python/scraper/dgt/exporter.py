@@ -2,9 +2,10 @@
 
 import json
 import logging
+import re
 from pathlib import Path
 
-import yaml
+import frontmatter
 
 from .parser import Consulta
 
@@ -20,19 +21,7 @@ SFT_SYSTEM_PROMPT = (
 
 def consulta_to_markdown(c: Consulta) -> str:
     """Render a Consulta as a Markdown string with YAML frontmatter."""
-    frontmatter = {
-        "numero": c.numero,
-        "organo": c.organo,
-        "fecha": c.fecha_iso,
-        "normativa": c.normativa,
-        "url": f"{BASE_URL}/consultas/?num_consulta={c.numero}",
-    }
-    fm = yaml.dump(frontmatter, allow_unicode=True, default_flow_style=False, sort_keys=False)
-    lines = [
-        "---",
-        fm.rstrip(),
-        "---",
-        "",
+    body = "\n".join([
         f"# Consulta Vinculante {c.numero}",
         "",
         "## Descripcion de hechos",
@@ -47,8 +36,16 @@ def consulta_to_markdown(c: Consulta) -> str:
         "",
         c.contestacion,
         "",
-    ]
-    return "\n".join(lines)
+    ])
+    post = frontmatter.Post(
+        body,
+        numero=c.numero,
+        organo=c.organo,
+        fecha=c.fecha_iso,
+        normativa=c.normativa,
+        url=f"{BASE_URL}/consultas/?num_consulta={c.numero}",
+    )
+    return frontmatter.dumps(post) + "\n"
 
 
 def save_markdown(c: Consulta, data_dir: Path) -> Path:
@@ -110,36 +107,30 @@ def export_sft_from_markdowns(data_dir: Path, output_path: Path) -> int:
 
 def _parse_markdown(path: Path) -> Consulta | None:
     """Parse a saved Markdown file back into a Consulta."""
-    text = path.read_text(encoding="utf-8")
-    # Split frontmatter
-    if not text.startswith("---"):
-        return None
-    parts = text.split("---", 2)
-    if len(parts) < 3:
-        return None
     try:
-        fm = yaml.safe_load(parts[1])
-    except yaml.YAMLError:
+        post = frontmatter.load(path)
+    except Exception:
+        logger.warning("Failed to parse frontmatter from %s", path)
         return None
 
-    body = parts[2]
+    fm = post.metadata
+    body = post.content
 
     def _extract_section(header: str) -> str:
-        pattern = rf"## {header}\n\n(.*?)(?=\n## |\Z)"
-        import re
+        pattern = rf"## {re.escape(header)}\n\n(.*?)(?=\n## |\Z)"
         m = re.search(pattern, body, re.DOTALL)
         return m.group(1).strip() if m else ""
 
     # Convert fecha back to DD/MM/YYYY for Consulta
-    fecha_iso = fm.get("fecha", "")
+    fecha_iso = str(fm.get("fecha", ""))
     fecha_parts = fecha_iso.split("-")
     fecha = f"{fecha_parts[2]}/{fecha_parts[1]}/{fecha_parts[0]}" if len(fecha_parts) == 3 else fecha_iso
 
     return Consulta(
-        numero=fm.get("numero", ""),
-        organo=fm.get("organo", ""),
+        numero=str(fm.get("numero", "")),
+        organo=str(fm.get("organo", "")),
         fecha=fecha,
-        normativa=fm.get("normativa", ""),
+        normativa=str(fm.get("normativa", "")),
         hechos=_extract_section("Descripcion de hechos"),
         cuestion=_extract_section("Cuestion planteada"),
         contestacion=_extract_section("Contestacion"),

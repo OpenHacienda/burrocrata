@@ -15,7 +15,7 @@ python3Packages.buildPythonApplication {
     requests
     beautifulsoup4
     click
-    pyyaml
+    python-frontmatter
   ];
 
   doCheck = false;

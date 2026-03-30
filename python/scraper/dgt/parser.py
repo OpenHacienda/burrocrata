@@ -4,7 +4,7 @@ import html
 import re
 from dataclasses import dataclass
 
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup
 
 
 @dataclass

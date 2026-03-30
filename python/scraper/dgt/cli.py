@@ -82,6 +82,7 @@ def _fetch_year(
     logger.info("[%d] Found %d consultas across %d pages", year, total_results, total_pages)
 
     fetched = 0
+    skipped = 0
     errors = 0
     start_time = time.monotonic()
 
@@ -93,14 +94,14 @@ def _fetch_year(
         logger.info("[%d] Resuming from page %d", year, start_page)
 
     for page_num in range(start_page, total_pages + 1):
-        if page_num > 1:
+        if page_num != 1 or start_page > 1:
             html = session.search(page=page_num, date_start=date_start, date_end=date_end)
             page_data = parse_search_results(html)
 
         for result in page_data.results:
             if result.numero and result.numero in existing:
                 logger.debug("Skipping %s (already exists)", result.numero)
-                fetched += 1
+                skipped += 1
                 continue
 
             try:
@@ -126,11 +127,12 @@ def _fetch_year(
         # Progress
         elapsed = time.monotonic() - start_time
         rate = fetched / elapsed if elapsed > 0 else 0
-        remaining = total_results - fetched
+        remaining = total_results - fetched - skipped - errors
         eta = remaining / rate if rate > 0 else 0
         click.echo(
             f"[{year}] Page {page_num}/{total_pages} | "
             f"Fetched: {fetched}/{total_results} | "
+            f"Skipped: {skipped} | "
             f"Errors: {errors} | "
             f"ETA: {_format_eta(eta)}"
         )

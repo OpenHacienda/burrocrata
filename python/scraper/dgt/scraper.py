@@ -94,10 +94,12 @@ class DGTSession:
                     continue
                 raise
             if resp.status_code == 401:
-                logger.warning("Got 401, reinitializing session…")
-                self._initialized = False
-                self.init()
-                continue
+                if attempt < MAX_RETRIES:
+                    logger.warning("Got 401, reinitializing session…")
+                    self._initialized = False
+                    self.init()
+                    continue
+                resp.raise_for_status()
             if resp.status_code == 503:
                 if attempt < MAX_RETRIES:
                     wait = RETRY_BACKOFFS[attempt]
