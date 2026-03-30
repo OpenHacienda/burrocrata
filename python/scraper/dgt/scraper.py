@@ -80,11 +80,29 @@ class DGTSession:
         with self._init_lock:
             if self._initialized:
                 return
-            self.bucket.wait()
-            resp = self.session.get(f"{BASE_URL}/consultas/")
-            resp.raise_for_status()
-            self._initialized = True
-            logger.info("Session initialized (cookies obtained)")
+            for attempt in range(MAX_RETRIES + 1):
+                self.bucket.wait()
+                try:
+                    resp = self.session.get(f"{BASE_URL}/consultas/")
+                except requests.RequestException as exc:
+                    if attempt < MAX_RETRIES:
+                        wait = RETRY_BACKOFFS[attempt]
+                        logger.warning("Init request error (%s), retrying in %ds…", exc, wait)
+                        time.sleep(wait)
+                        continue
+                    raise
+                if resp.status_code == 503:
+                    if attempt < MAX_RETRIES:
+                        wait = RETRY_BACKOFFS[attempt]
+                        logger.warning("Init got 503, retrying in %ds…", wait)
+                        time.sleep(wait)
+                        continue
+                    resp.raise_for_status()
+                resp.raise_for_status()
+                self._initialized = True
+                logger.info("Session initialized (cookies obtained)")
+                return
+            raise RuntimeError("Failed to initialize session after retries")
 
     def _ensure_init(self) -> None:
         if not self._initialized:
