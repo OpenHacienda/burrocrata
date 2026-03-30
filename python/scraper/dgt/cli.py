@@ -121,6 +121,7 @@ def _fetch_year(
                     continue
 
                 path = save_markdown(consulta, data_dir)
+                existing.add(consulta.numero)
                 fetched += 1
                 logger.debug("Saved %s -> %s", consulta.numero, path)
             except Exception:
