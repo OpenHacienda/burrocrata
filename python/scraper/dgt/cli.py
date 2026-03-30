@@ -39,6 +39,25 @@ def _save_checkpoint(data_dir: Path, checkpoint: dict) -> None:
     cp_path.write_text(json.dumps(checkpoint, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _load_search_index(data_dir: Path, year: int) -> list[dict] | None:
+    """Load cached search index for a year, or None if not cached."""
+    path = data_dir / "search_index" / f"{year}.json"
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, KeyError):
+            return None
+    return None
+
+
+def _save_search_index(data_dir: Path, year: int, entries: list[dict]) -> None:
+    """Save the full search index for a year."""
+    idx_dir = data_dir / "search_index"
+    idx_dir.mkdir(parents=True, exist_ok=True)
+    path = idx_dir / f"{year}.json"
+    path.write_text(json.dumps(entries, ensure_ascii=False), encoding="utf-8")
+
+
 def _existing_numeros(data_dir: Path) -> set[str]:
     """Return the set of already-downloaded consulta numbers (md or raw html)."""
     numeros: set[str] = set()
@@ -61,6 +80,54 @@ def _format_eta(seconds: float) -> str:
     return f"{hours}h{mins:02d}m"
 
 
+def _build_search_index(
+    session: DGTSession,
+    year: int,
+    data_dir: Path,
+) -> list[dict]:
+    """Paginate through all search results for a year and return a doc index.
+
+    Uses a cached index if available; otherwise paginates the server and
+    caches the result so subsequent runs skip the pagination entirely.
+    """
+    cached = _load_search_index(data_dir, year)
+    if cached is not None:
+        logger.info("[%d] Using cached search index (%d entries)", year, len(cached))
+        return cached
+
+    date_start = f"01/01/{year}"
+    date_end = f"31/12/{year}"
+
+    html = session.search(page=1, date_start=date_start, date_end=date_end)
+    page_data = parse_search_results(html)
+    total_pages = page_data.total_pages
+
+    if page_data.total_results == 0:
+        _save_search_index(data_dir, year, [])
+        return []
+
+    logger.info(
+        "[%d] Building search index: %d results across %d pages",
+        year, page_data.total_results, total_pages,
+    )
+
+    entries: list[dict] = []
+    for result in page_data.results:
+        entries.append({"doc_id": result.doc_id, "numero": result.numero})
+
+    for page_num in range(2, total_pages + 1):
+        html = session.search(page=page_num, date_start=date_start, date_end=date_end)
+        page_data = parse_search_results(html)
+        for result in page_data.results:
+            entries.append({"doc_id": result.doc_id, "numero": result.numero})
+        if page_num % 10 == 0 or page_num == total_pages:
+            click.echo(f"[{year}] Indexing page {page_num}/{total_pages}")
+
+    _save_search_index(data_dir, year, entries)
+    logger.info("[%d] Search index cached (%d entries)", year, len(entries))
+    return entries
+
+
 def _fetch_year(
     session: DGTSession,
     year: int,
@@ -70,85 +137,79 @@ def _fetch_year(
     checkpoint: dict | None = None,
 ) -> tuple[int, int]:
     """Fetch all consultas for a given year. Returns (fetched, errors)."""
-    date_start = f"01/01/{year}"
-    date_end = f"31/12/{year}"
-
     if existing is None:
         existing = _existing_numeros(data_dir) if not force else set()
     if checkpoint is None:
         checkpoint = _load_checkpoint(data_dir)
 
-    # First search to get totals
-    html = session.search(page=1, date_start=date_start, date_end=date_end)
-    page_data = parse_search_results(html)
-    total_results = page_data.total_results
-    total_pages = page_data.total_pages
+    entries = _build_search_index(session, year, data_dir)
+    total_results = len(entries)
 
     if total_results == 0:
         logger.info("[%d] No results found", year)
         return 0, 0
-
-    logger.info("[%d] Found %d consultas across %d pages", year, total_results, total_pages)
 
     fetched = 0
     skipped = 0
     errors = 0
     start_time = time.monotonic()
 
+    # Checkpoint: resume from last doc index
     cp_key = f"year_{year}"
-    start_page = checkpoint.get(cp_key, {}).get("page", 1)
-    if start_page > 1:
-        logger.info("[%d] Resuming from page %d", year, start_page)
+    start_idx = checkpoint.get(cp_key, {}).get("doc_idx", 0)
+    if start_idx > 0:
+        logger.info("[%d] Resuming from document %d/%d", year, start_idx, total_results)
 
-    for page_num in range(start_page, total_pages + 1):
-        if page_num != 1 or start_page > 1:
-            html = session.search(page=page_num, date_start=date_start, date_end=date_end)
-            page_data = parse_search_results(html)
+    for idx in range(start_idx, total_results):
+        entry = entries[idx]
+        numero = entry["numero"]
+        doc_id = entry["doc_id"]
 
-        for result in page_data.results:
-            if result.numero and result.numero in existing:
-                logger.debug("Skipping %s (already exists)", result.numero)
-                skipped += 1
+        if numero and numero in existing:
+            logger.debug("Skipping %s (already exists)", numero)
+            skipped += 1
+            continue
+
+        try:
+            doc_html = session.fetch_document(doc_id)
+            consulta = parse_document(doc_html)
+
+            if not consulta.numero:
+                consulta.numero = numero
+
+            if not consulta.numero:
+                logger.warning("Document %s has no numero, skipping", doc_id)
+                errors += 1
                 continue
 
-            try:
-                doc_html = session.fetch_document(result.doc_id)
-                consulta = parse_document(doc_html)
+            save_raw_html(doc_html, consulta.numero, consulta.year, data_dir)
+            path = save_markdown(consulta, data_dir)
+            existing.add(consulta.numero)
+            fetched += 1
+            logger.debug("Saved %s -> %s", consulta.numero, path)
+        except Exception:
+            logger.exception("Error fetching document %s", doc_id)
+            errors += 1
 
-                if not consulta.numero:
-                    # Use numero from search results as fallback
-                    consulta.numero = result.numero
+        # Progress every 20 docs (roughly one original page)
+        processed = idx - start_idx + 1
+        if processed % 20 == 0 or idx == total_results - 1:
+            elapsed = time.monotonic() - start_time
+            rate = fetched / elapsed if elapsed > 0 else 0
+            remaining = total_results - idx - 1
+            eta_str = _format_eta(remaining / rate) if rate > 0 else "--"
+            click.echo(
+                f"[{year}] Doc {idx + 1}/{total_results} | "
+                f"Fetched: {fetched} | "
+                f"Skipped: {skipped} | "
+                f"Errors: {errors} | "
+                f"ETA: {eta_str}"
+            )
 
-                if not consulta.numero:
-                    logger.warning("Document %s has no numero, skipping", result.doc_id)
-                    errors += 1
-                    continue
-
-                save_raw_html(doc_html, consulta.numero, consulta.year, data_dir)
-                path = save_markdown(consulta, data_dir)
-                existing.add(consulta.numero)
-                fetched += 1
-                logger.debug("Saved %s -> %s", consulta.numero, path)
-            except Exception:
-                logger.exception("Error fetching document %s", result.doc_id)
-                errors += 1
-
-        # Progress
-        elapsed = time.monotonic() - start_time
-        rate = fetched / elapsed if elapsed > 0 else 0
-        remaining = total_results - fetched - skipped - errors
-        eta_str = _format_eta(remaining / rate) if rate > 0 else "--"
-        click.echo(
-            f"[{year}] Page {page_num}/{total_pages} | "
-            f"Fetched: {fetched}/{total_results} | "
-            f"Skipped: {skipped} | "
-            f"Errors: {errors} | "
-            f"ETA: {eta_str}"
-        )
-
-        # Save checkpoint
-        checkpoint[cp_key] = {"page": page_num + 1}
-        _save_checkpoint(data_dir, checkpoint)
+        # Save checkpoint every 20 docs
+        if processed % 20 == 0:
+            checkpoint[cp_key] = {"doc_idx": idx + 1}
+            _save_checkpoint(data_dir, checkpoint)
 
     # Clear checkpoint for this year on success
     checkpoint.pop(cp_key, None)
