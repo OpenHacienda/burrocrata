@@ -62,12 +62,17 @@ def _fetch_year(
     year: int,
     data_dir: Path,
     force: bool = False,
+    existing: set[str] | None = None,
+    checkpoint: dict | None = None,
 ) -> tuple[int, int]:
     """Fetch all consultas for a given year. Returns (fetched, errors)."""
     date_start = f"01/01/{year}"
     date_end = f"31/12/{year}"
 
-    existing = _existing_numeros(data_dir) if not force else set()
+    if existing is None:
+        existing = _existing_numeros(data_dir) if not force else set()
+    if checkpoint is None:
+        checkpoint = _load_checkpoint(data_dir)
 
     # First search to get totals
     html = session.search(page=1, date_start=date_start, date_end=date_end)
@@ -86,8 +91,6 @@ def _fetch_year(
     errors = 0
     start_time = time.monotonic()
 
-    # Checkpoint support: resume from last page
-    checkpoint = _load_checkpoint(data_dir)
     cp_key = f"year_{year}"
     start_page = checkpoint.get(cp_key, {}).get("page", 1)
     if start_page > 1:
@@ -218,11 +221,16 @@ def fetch(
         from datetime import date
         years = list(range(1997, date.today().year + 1))
 
+    existing = _existing_numeros(data_path) if not force else set()
+    checkpoint = _load_checkpoint(data_path)
+
     total_fetched = 0
     total_errors = 0
 
     for y in years:
-        fetched, errors = _fetch_year(session, y, data_path, force=force)
+        fetched, errors = _fetch_year(
+            session, y, data_path, force=force, existing=existing, checkpoint=checkpoint,
+        )
         total_fetched += fetched
         total_errors += errors
 
@@ -236,19 +244,18 @@ def _save_metadata(data_dir: Path, fetched: int, errors: int) -> None:
     import datetime
     meta_path = data_dir / "metadata.json"
     data_dir.mkdir(parents=True, exist_ok=True)
-    meta = {
-        "last_run": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "total_fetched": fetched,
-        "total_errors": errors,
-    }
-    # Merge with existing if present
+    # Load existing metadata to accumulate lifetime stats
+    meta: dict = {}
     if meta_path.exists():
         try:
-            existing = json.loads(meta_path.read_text(encoding="utf-8"))
-            existing.update(meta)
-            meta = existing
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, KeyError):
             pass
+    meta["last_run"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    meta["last_fetched"] = fetched
+    meta["last_errors"] = errors
+    meta["lifetime_fetched"] = meta.get("lifetime_fetched", 0) + fetched
+    meta["lifetime_errors"] = meta.get("lifetime_errors", 0) + errors
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
 

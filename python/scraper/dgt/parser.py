@@ -144,7 +144,7 @@ def parse_document(html_content: str) -> Consulta:
         numero=_extract_single_field(soup, "NUM-CONSULTA"),
         organo=_extract_single_field(soup, "ORGANO"),
         fecha=_extract_single_field(soup, "FECHA-SALIDA"),
-        normativa=_extract_single_field(soup, "NORMATIVA"),
+        normativa=_extract_multi_paragraph(soup, "NORMATIVA"),
         hechos=_extract_multi_paragraph(soup, "DESCRIPCION-HECHOS"),
         cuestion=_extract_multi_paragraph(soup, "CUESTION-PLANTEADA"),
         contestacion=_extract_multi_paragraph(soup, "CONTESTACION-COMPL"),
