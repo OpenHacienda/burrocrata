@@ -10,7 +10,7 @@ from pathlib import Path
 
 import click
 
-from .exporter import export_sft_from_markdowns, load_raw_html, save_markdown, save_raw_html
+from .exporter import export_sft_from_markdowns, save_markdown, save_raw_html
 from .parser import parse_document, parse_search_results
 from .scraper import DGTSession
 
@@ -204,10 +204,8 @@ def _fetch_year(
 
     # Thread-safe counters
     lock = threading.Lock()
-    last_completed_idx = start_idx
 
     def _progress() -> None:
-        nonlocal last_completed_idx
         done = fetched + errors
         if done % 20 == 0 or done == len(work):
             elapsed = time.monotonic() - start_time
@@ -229,8 +227,8 @@ def _fetch_year(
                 numero, err = _fetch_one_doc(
                     session, entry["doc_id"], entry["numero"], data_dir,
                 )
-                if err:
-                    logger.warning(err)
+                if err or numero is None:
+                    logger.warning(err or f"Document {entry['doc_id']} returned no numero")
                     errors += 1
                 else:
                     existing.add(numero)
@@ -261,8 +259,8 @@ def _fetch_year(
                 try:
                     numero, err = fut.result()
                     with lock:
-                        if err:
-                            logger.warning(err)
+                        if err or numero is None:
+                            logger.warning(err or f"Document {entry['doc_id']} returned no numero")
                             errors += 1
                         else:
                             existing.add(numero)
