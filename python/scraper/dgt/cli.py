@@ -3,7 +3,9 @@
 import json
 import logging
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import click
@@ -128,6 +130,27 @@ def _build_search_index(
     return entries
 
 
+def _fetch_one_doc(
+    session: DGTSession,
+    doc_id: str,
+    numero_hint: str,
+    data_dir: Path,
+) -> tuple[str | None, str | None]:
+    """Fetch and save a single document. Returns (numero, error_msg)."""
+    doc_html = session.fetch_document(doc_id)
+    consulta = parse_document(doc_html)
+
+    if not consulta.numero:
+        consulta.numero = numero_hint
+
+    if not consulta.numero:
+        return None, f"Document {doc_id} has no numero"
+
+    save_raw_html(doc_html, consulta.numero, consulta.year, data_dir)
+    save_markdown(consulta, data_dir)
+    return consulta.numero, None
+
+
 def _fetch_year(
     session: DGTSession,
     year: int,
@@ -135,6 +158,7 @@ def _fetch_year(
     force: bool = False,
     existing: set[str] | None = None,
     checkpoint: dict | None = None,
+    concurrency: int = 1,
 ) -> tuple[int, int]:
     """Fetch all consultas for a given year. Returns (fetched, errors)."""
     if existing is None:
@@ -160,56 +184,99 @@ def _fetch_year(
     if start_idx > 0:
         logger.info("[%d] Resuming from document %d/%d", year, start_idx, total_results)
 
+    # Filter out already-existing entries upfront
+    work: list[tuple[int, dict]] = []
     for idx in range(start_idx, total_results):
         entry = entries[idx]
-        numero = entry["numero"]
-        doc_id = entry["doc_id"]
-
-        if numero and numero in existing:
-            logger.debug("Skipping %s (already exists)", numero)
+        if entry["numero"] and entry["numero"] in existing:
+            logger.debug("Skipping %s (already exists)", entry["numero"])
             skipped += 1
-            continue
+        else:
+            work.append((idx, entry))
 
-        try:
-            doc_html = session.fetch_document(doc_id)
-            consulta = parse_document(doc_html)
+    if not work:
+        logger.info("[%d] All %d consultas already downloaded", year, total_results)
+        checkpoint.pop(cp_key, None)
+        _save_checkpoint(data_dir, checkpoint)
+        return 0, 0
 
-            if not consulta.numero:
-                consulta.numero = numero
+    logger.info("[%d] %d to fetch, %d skipped (concurrency=%d)", year, len(work), skipped, concurrency)
 
-            if not consulta.numero:
-                logger.warning("Document %s has no numero, skipping", doc_id)
-                errors += 1
-                continue
+    # Thread-safe counters
+    lock = threading.Lock()
+    last_completed_idx = start_idx
 
-            save_raw_html(doc_html, consulta.numero, consulta.year, data_dir)
-            path = save_markdown(consulta, data_dir)
-            existing.add(consulta.numero)
-            fetched += 1
-            logger.debug("Saved %s -> %s", consulta.numero, path)
-        except Exception:
-            logger.exception("Error fetching document %s", doc_id)
-            errors += 1
-
-        # Progress every 20 docs (roughly one original page)
-        processed = idx - start_idx + 1
-        if processed % 20 == 0 or idx == total_results - 1:
+    def _progress() -> None:
+        nonlocal last_completed_idx
+        done = fetched + errors
+        if done % 20 == 0 or done == len(work):
             elapsed = time.monotonic() - start_time
             rate = fetched / elapsed if elapsed > 0 else 0
-            remaining = total_results - idx - 1
+            remaining = len(work) - done
             eta_str = _format_eta(remaining / rate) if rate > 0 else "--"
             click.echo(
-                f"[{year}] Doc {idx + 1}/{total_results} | "
+                f"[{year}] Done {done}/{len(work)} (of {total_results} total) | "
                 f"Fetched: {fetched} | "
                 f"Skipped: {skipped} | "
                 f"Errors: {errors} | "
                 f"ETA: {eta_str}"
             )
 
-        # Save checkpoint every 20 docs
-        if processed % 20 == 0:
-            checkpoint[cp_key] = {"doc_idx": idx + 1}
-            _save_checkpoint(data_dir, checkpoint)
+    if concurrency <= 1:
+        # Sequential path — simpler, preserves order for checkpointing
+        for work_pos, (idx, entry) in enumerate(work):
+            try:
+                numero, err = _fetch_one_doc(
+                    session, entry["doc_id"], entry["numero"], data_dir,
+                )
+                if err:
+                    logger.warning(err)
+                    errors += 1
+                else:
+                    existing.add(numero)
+                    fetched += 1
+                    logger.debug("Saved %s", numero)
+            except Exception:
+                logger.exception("Error fetching document %s", entry["doc_id"])
+                errors += 1
+
+            _progress()
+
+            if (work_pos + 1) % 20 == 0:
+                checkpoint[cp_key] = {"doc_idx": idx + 1}
+                _save_checkpoint(data_dir, checkpoint)
+    else:
+        # Concurrent path — pipeline requests to overlap network latency
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            future_to_entry = {}
+            for idx, entry in work:
+                fut = pool.submit(
+                    _fetch_one_doc,
+                    session, entry["doc_id"], entry["numero"], data_dir,
+                )
+                future_to_entry[fut] = (idx, entry)
+
+            for fut in as_completed(future_to_entry):
+                idx, entry = future_to_entry[fut]
+                try:
+                    numero, err = fut.result()
+                    with lock:
+                        if err:
+                            logger.warning(err)
+                            errors += 1
+                        else:
+                            existing.add(numero)
+                            fetched += 1
+                            logger.debug("Saved %s", numero)
+                        _progress()
+                except Exception:
+                    with lock:
+                        logger.exception("Error fetching document %s", entry["doc_id"])
+                        errors += 1
+                        _progress()
+
+        # Checkpoint at the end for concurrent mode (order is non-deterministic)
+        checkpoint[cp_key] = {"doc_idx": total_results}
 
     # Clear checkpoint for this year on success
     checkpoint.pop(cp_key, None)
@@ -262,6 +329,7 @@ def test(rate_limit: float) -> None:
 @click.option("--update", is_flag=True, help="Download only the current year (incremental)")
 @click.option("--data-dir", type=click.Path(), default=str(DEFAULT_DATA_DIR))
 @click.option("--rate-limit", default=0.5, help="Requests per second")
+@click.option("--concurrency", default=1, help="Concurrent document fetches (default: 1)")
 @click.option("--force", is_flag=True, help="Re-download even if file exists")
 def fetch(
     year: int | None,
@@ -269,6 +337,7 @@ def fetch(
     update: bool,
     data_dir: str,
     rate_limit: float,
+    concurrency: int,
     force: bool,
 ) -> None:
     """Fetch consultas vinculantes from PETETE."""
@@ -296,7 +365,8 @@ def fetch(
 
     for y in years:
         fetched, errors = _fetch_year(
-            session, y, data_path, force=force, existing=existing, checkpoint=checkpoint,
+            session, y, data_path, force=force, existing=existing,
+            checkpoint=checkpoint, concurrency=concurrency,
         )
         total_fetched += fetched
         total_errors += errors

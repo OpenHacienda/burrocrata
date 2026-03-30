@@ -1,6 +1,7 @@
 """DGT PETETE scraper – session management, search pagination, and document fetching."""
 
 import logging
+import threading
 import time
 from dataclasses import dataclass, field
 
@@ -32,30 +33,35 @@ RETRY_BACKOFFS = [5, 15, 45]
 
 @dataclass
 class TokenBucket:
-    """Simple token-bucket rate limiter."""
+    """Thread-safe token-bucket rate limiter."""
 
     rate: float = 0.5  # tokens per second
     burst: int = 5
     _tokens: float = field(init=False, default=0.0)
     _last: float = field(init=False, default=0.0)
+    _lock: threading.Lock = field(init=False, default_factory=threading.Lock)
 
     def __post_init__(self) -> None:
         self._tokens = float(self.burst)
         self._last = time.monotonic()
 
     def wait(self) -> None:
-        now = time.monotonic()
-        elapsed = now - self._last
-        self._tokens = min(self.burst, self._tokens + elapsed * self.rate)
-        self._last = now
-        if self._tokens < 1:
-            sleep_time = (1 - self._tokens) / self.rate
+        with self._lock:
+            now = time.monotonic()
+            elapsed = now - self._last
+            self._tokens = min(self.burst, self._tokens + elapsed * self.rate)
+            self._last = now
+            if self._tokens < 1:
+                sleep_time = (1 - self._tokens) / self.rate
+                self._tokens = 0
+            else:
+                self._tokens -= 1
+                sleep_time = 0.0
+        if sleep_time > 0:
             logger.debug("Rate limit: sleeping %.2fs", sleep_time)
             time.sleep(sleep_time)
-            self._tokens = 0
-            self._last = time.monotonic()
-        else:
-            self._tokens -= 1
+            with self._lock:
+                self._last = time.monotonic()
 
 
 class DGTSession:
@@ -67,14 +73,18 @@ class DGTSession:
         self.session.verify = False
         self.bucket = TokenBucket(rate=rate_limit)
         self._initialized = False
+        self._init_lock = threading.Lock()
 
     def init(self) -> None:
         """Visit the landing page to obtain session cookies."""
-        self.bucket.wait()
-        resp = self.session.get(f"{BASE_URL}/consultas/")
-        resp.raise_for_status()
-        self._initialized = True
-        logger.info("Session initialized (cookies obtained)")
+        with self._init_lock:
+            if self._initialized:
+                return
+            self.bucket.wait()
+            resp = self.session.get(f"{BASE_URL}/consultas/")
+            resp.raise_for_status()
+            self._initialized = True
+            logger.info("Session initialized (cookies obtained)")
 
     def _ensure_init(self) -> None:
         if not self._initialized:
@@ -96,7 +106,8 @@ class DGTSession:
             if resp.status_code == 401:
                 if attempt < MAX_RETRIES:
                     logger.warning("Got 401, reinitializing session…")
-                    self._initialized = False
+                    with self._init_lock:
+                        self._initialized = False
                     self.init()
                     continue
                 resp.raise_for_status()
