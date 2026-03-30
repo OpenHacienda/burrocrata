@@ -9,7 +9,7 @@ from pathlib import Path
 import click
 
 from .exporter import export_sft_from_markdowns, save_markdown
-from .parser import Consulta, SearchResult, parse_document, parse_search_results
+from .parser import parse_document, parse_search_results
 from .scraper import DGTSession
 
 DEFAULT_DATA_DIR = Path("data/dgt")
@@ -128,13 +128,13 @@ def _fetch_year(
         elapsed = time.monotonic() - start_time
         rate = fetched / elapsed if elapsed > 0 else 0
         remaining = total_results - fetched - skipped - errors
-        eta = remaining / rate if rate > 0 else 0
+        eta_str = _format_eta(remaining / rate) if rate > 0 else "--"
         click.echo(
             f"[{year}] Page {page_num}/{total_pages} | "
             f"Fetched: {fetched}/{total_results} | "
             f"Skipped: {skipped} | "
             f"Errors: {errors} | "
-            f"ETA: {_format_eta(eta)}"
+            f"ETA: {eta_str}"
         )
 
         # Save checkpoint
