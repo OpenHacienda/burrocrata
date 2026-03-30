@@ -57,6 +57,23 @@ def save_markdown(c: Consulta, data_dir: Path) -> Path:
     return path
 
 
+def save_raw_html(html_content: str, numero: str, year: str, data_dir: Path) -> Path:
+    """Save the raw HTML of a document for later re-parsing."""
+    raw_dir = data_dir / "raw" / year
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    path = raw_dir / f"{numero}.html"
+    path.write_text(html_content, encoding="utf-8")
+    return path
+
+
+def load_raw_html(numero: str, year: str, data_dir: Path) -> str | None:
+    """Load cached raw HTML for a document, or None if not cached."""
+    path = data_dir / "raw" / year / f"{numero}.html"
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    return None
+
+
 def consulta_to_sft(c: Consulta) -> dict:
     """Convert a consulta to a ChatML-style SFT training example."""
     user_content = c.hechos

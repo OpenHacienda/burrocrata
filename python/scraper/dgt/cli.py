@@ -8,7 +8,7 @@ from pathlib import Path
 
 import click
 
-from .exporter import export_sft_from_markdowns, save_markdown
+from .exporter import export_sft_from_markdowns, load_raw_html, save_markdown, save_raw_html
 from .parser import parse_document, parse_search_results
 from .scraper import DGTSession
 
@@ -40,11 +40,15 @@ def _save_checkpoint(data_dir: Path, checkpoint: dict) -> None:
 
 
 def _existing_numeros(data_dir: Path) -> set[str]:
-    """Return the set of already-downloaded consulta numbers."""
+    """Return the set of already-downloaded consulta numbers (md or raw html)."""
+    numeros: set[str] = set()
     consultas_dir = data_dir / "consultas"
-    if not consultas_dir.exists():
-        return set()
-    return {p.stem for p in consultas_dir.rglob("*.md")}
+    if consultas_dir.exists():
+        numeros.update(p.stem for p in consultas_dir.rglob("*.md"))
+    raw_dir = data_dir / "raw"
+    if raw_dir.exists():
+        numeros.update(p.stem for p in raw_dir.rglob("*.html"))
+    return numeros
 
 
 def _format_eta(seconds: float) -> str:
@@ -120,6 +124,7 @@ def _fetch_year(
                     errors += 1
                     continue
 
+                save_raw_html(doc_html, consulta.numero, consulta.year, data_dir)
                 path = save_markdown(consulta, data_dir)
                 existing.add(consulta.numero)
                 fetched += 1
@@ -307,6 +312,37 @@ def stats(data_dir: str) -> None:
     if meta_path.exists():
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         click.echo(f"Last run: {meta.get('last_run', 'unknown')}")
+
+
+@cli.command()
+@click.option("--data-dir", type=click.Path(), default=str(DEFAULT_DATA_DIR))
+def reparse(data_dir: str) -> None:
+    """Re-generate all markdown files from cached raw HTML."""
+    data_path = Path(data_dir)
+    raw_dir = data_path / "raw"
+
+    if not raw_dir.exists():
+        click.echo("No raw HTML cache found. Run 'fetch' first.")
+        return
+
+    html_files = sorted(raw_dir.rglob("*.html"))
+    click.echo(f"Found {len(html_files)} cached HTML files")
+
+    reparsed = 0
+    errors = 0
+    for html_path in html_files:
+        try:
+            html_content = html_path.read_text(encoding="utf-8")
+            consulta = parse_document(html_content)
+            if not consulta.numero:
+                consulta.numero = html_path.stem
+            save_markdown(consulta, data_path)
+            reparsed += 1
+        except Exception:
+            logger.exception("Error re-parsing %s", html_path)
+            errors += 1
+
+    click.echo(f"Done. Re-parsed: {reparsed} | Errors: {errors}")
 
 
 def main() -> None:
