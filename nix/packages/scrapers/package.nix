@@ -3,11 +3,11 @@
   python3Packages,
 }:
 python3Packages.buildPythonApplication {
-  pname = "scrapper-dgt";
+  pname = "burrocrata-scrapers";
   version = "0.1.0";
   pyproject = true;
 
-  src = lib.cleanSource ../../../python;
+  src = lib.cleanSource ../../../packages/scrapers;
 
   build-system = [ python3Packages.setuptools ];
 
@@ -21,7 +21,7 @@ python3Packages.buildPythonApplication {
   doCheck = false;
 
   meta = {
-    description = "Scraper for DGT consultas vinculantes from PETETE";
-    mainProgram = "scrapper-dgt";
+    description = "Scrapers for Spanish tax/legal sources (DGT, ...)";
+    mainProgram = "burrocrata-dgt";
   };
 }
