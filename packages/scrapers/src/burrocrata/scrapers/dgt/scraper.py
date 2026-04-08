@@ -1,7 +1,6 @@
 """DGT PETETE scraper – session management, search pagination, and document fetching."""
 
 import logging
-import random
 import threading
 import time
 
@@ -9,6 +8,7 @@ import requests
 import urllib3
 
 from burrocrata.scrapers.core.ratelimit import TokenBucket
+from burrocrata.scrapers.core.retry import MAX_RETRIES, RETRY_BACKOFFS, compute_backoff
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -28,10 +28,6 @@ HEADERS = {
     "Referer": f"{BASE_URL}/consultas/",
     "Content-Type": "application/x-www-form-urlencoded",
 }
-
-MAX_RETRIES = 3
-RETRY_BACKOFFS = [5, 15, 45]
-
 
 class DGTSession:
     """Manages an HTTP session against the PETETE server."""
@@ -84,18 +80,6 @@ class DGTSession:
         if not self._initialized:
             self.init()
 
-    def _backoff(self, attempt: int, resp: requests.Response | None = None) -> float:
-        """Compute backoff with jitter. Honors Retry-After when present."""
-        if resp is not None:
-            retry_after = resp.headers.get("Retry-After")
-            if retry_after:
-                try:
-                    return float(retry_after)
-                except ValueError:
-                    pass  # HTTP-date form — ignore, fall through
-        base = RETRY_BACKOFFS[min(attempt, len(RETRY_BACKOFFS) - 1)]
-        return base * (1 + random.random() * 0.3)
-
     def _post_with_retry(self, url: str, data: dict) -> requests.Response:
         self._ensure_init()
         for attempt in range(MAX_RETRIES + 1):
@@ -105,7 +89,7 @@ class DGTSession:
             except requests.RequestException as exc:
                 self.bucket.record_failure()
                 if attempt < MAX_RETRIES:
-                    wait = self._backoff(attempt)
+                    wait = compute_backoff(attempt)
                     logger.warning("Request error (%s), retrying in %.1fs…", exc, wait)
                     time.sleep(wait)
                     continue
@@ -121,7 +105,7 @@ class DGTSession:
             if resp.status_code == 429 or resp.status_code >= 500:
                 self.bucket.record_failure()
                 if attempt < MAX_RETRIES:
-                    wait = self._backoff(attempt, resp)
+                    wait = compute_backoff(attempt, resp)
                     logger.warning("Got %d, retrying in %.1fs…", resp.status_code, wait)
                     time.sleep(wait)
                     continue
