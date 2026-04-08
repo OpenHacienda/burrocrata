@@ -11,7 +11,8 @@ from pathlib import Path
 import os
 
 import click
-import requests
+
+from burrocrata.scrapers.core.notify import notify_ntfy
 
 from .exporter import export_sft_from_markdowns, save_markdown, save_raw_html
 from .parser import parse_document, parse_search_results
@@ -445,7 +446,7 @@ def fetch(
                 else f"years {years[0]}-{years[-1]}"
             )
             priority = "high" if total_errors else "default"
-            _notify_ntfy(
+            notify_ntfy(
                 ntfy_topic,
                 title=f"DGT scraper done ({year_desc})",
                 message=f"Fetched: {total_fetched} | Errors: {total_errors}",
@@ -453,7 +454,7 @@ def fetch(
                 server=ntfy_server,
             )
         else:
-            _notify_ntfy(
+            notify_ntfy(
                 ntfy_topic,
                 title="DGT scraper failed",
                 message=(
@@ -464,29 +465,6 @@ def fetch(
                 priority="urgent",
                 server=ntfy_server,
             )
-
-
-def _notify_ntfy(
-    topic: str | None,
-    title: str,
-    message: str,
-    priority: str = "default",
-    server: str | None = None,
-) -> None:
-    """Send a notification to an ntfy topic. Silently no-ops if topic is falsy."""
-    if not topic:
-        return
-    server = (server or os.environ.get("NTFY_SERVER") or "https://ntfy.sh").rstrip("/")
-    url = f"{server}/{topic}"
-    try:
-        requests.post(
-            url,
-            data=message.encode("utf-8"),
-            headers={"Title": title, "Priority": priority, "Tags": "scroll"},
-            timeout=10,
-        )
-    except requests.RequestException as exc:
-        logger.warning("Failed to send ntfy notification: %s", exc)
 
 
 def _save_metadata(data_dir: Path, fetched: int, errors: int) -> None:
