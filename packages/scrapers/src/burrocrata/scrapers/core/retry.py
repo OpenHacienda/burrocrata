@@ -10,9 +10,7 @@ MAX_RETRIES = 3
 RETRY_BACKOFFS = [5, 15, 45]
 
 
-def compute_backoff(
-    attempt: int, resp: requests.Response | None = None
-) -> float:
+def compute_backoff(attempt: int, resp: requests.Response | None = None) -> float:
     """Compute backoff seconds with jitter. Honors Retry-After when present."""
     if resp is not None:
         retry_after = resp.headers.get("Retry-After")

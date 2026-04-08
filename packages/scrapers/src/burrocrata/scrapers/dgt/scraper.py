@@ -29,6 +29,7 @@ HEADERS = {
     "Content-Type": "application/x-www-form-urlencoded",
 }
 
+
 class DGTSession:
     """Manages an HTTP session against the PETETE server."""
 
