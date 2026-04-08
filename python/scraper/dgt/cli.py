@@ -8,7 +8,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+import os
+
 import click
+import requests
 
 from .exporter import export_sft_from_markdowns, save_markdown, save_raw_html
 from .parser import parse_document, parse_search_results
@@ -326,21 +329,37 @@ def test(rate_limit: float) -> None:
 @click.option("--all", "fetch_all", is_flag=True, help="Download all years (1997-present)")
 @click.option("--update", is_flag=True, help="Download only the current year (incremental)")
 @click.option("--data-dir", type=click.Path(), default=str(DEFAULT_DATA_DIR))
-@click.option("--rate-limit", default=0.5, help="Requests per second")
+@click.option("--rate-limit", default=1.0, help="Starting requests/sec (AIMD adjusts, default: 1.0)")
+@click.option("--min-rate", default=0.2, help="Minimum requests/sec floor (default: 0.2)")
+@click.option("--max-rate", default=4.0, help="Maximum requests/sec ceiling (default: 4.0)")
 @click.option("--concurrency", default=1, help="Concurrent document fetches (default: 1)")
 @click.option("--force", is_flag=True, help="Re-download even if file exists")
+@click.option(
+    "--ntfy-topic",
+    default=lambda: os.environ.get("NTFY_TOPIC"),
+    help="ntfy topic for a completion notification (or env NTFY_TOPIC)",
+)
+@click.option(
+    "--ntfy-server",
+    default=lambda: os.environ.get("NTFY_SERVER"),
+    help="ntfy server URL (default: https://ntfy.sh, or env NTFY_SERVER)",
+)
 def fetch(
     year: int | None,
     fetch_all: bool,
     update: bool,
     data_dir: str,
     rate_limit: float,
+    min_rate: float,
+    max_rate: float,
     concurrency: int,
     force: bool,
+    ntfy_topic: str | None,
+    ntfy_server: str | None,
 ) -> None:
     """Fetch consultas vinculantes from PETETE."""
     data_path = Path(data_dir)
-    session = DGTSession(rate_limit=rate_limit)
+    session = DGTSession(rate_limit=rate_limit, min_rate=min_rate, max_rate=max_rate)
 
     if not year and not fetch_all and not update:
         click.echo("Specify --year YYYY, --all, or --update", err=True)
@@ -360,19 +379,71 @@ def fetch(
 
     total_fetched = 0
     total_errors = 0
+    failed_year: int | None = None
+    exc_info: BaseException | None = None
 
-    for y in years:
-        fetched, errors = _fetch_year(
-            session, y, data_path, force=force, existing=existing,
-            checkpoint=checkpoint, concurrency=concurrency,
+    try:
+        for y in years:
+            fetched, errors = _fetch_year(
+                session, y, data_path, force=force, existing=existing,
+                checkpoint=checkpoint, concurrency=concurrency,
+            )
+            total_fetched += fetched
+            total_errors += errors
+    except BaseException as exc:
+        failed_year = y
+        exc_info = exc
+        raise
+    finally:
+        if exc_info is None:
+            click.echo(f"\nDone. Fetched: {total_fetched} | Errors: {total_errors}")
+            _save_metadata(data_path, total_fetched, total_errors)
+            year_desc = (
+                f"year {years[0]}" if len(years) == 1 else f"years {years[0]}-{years[-1]}"
+            )
+            priority = "high" if total_errors else "default"
+            _notify_ntfy(
+                ntfy_topic,
+                title=f"DGT scraper done ({year_desc})",
+                message=f"Fetched: {total_fetched} | Errors: {total_errors}",
+                priority=priority,
+                server=ntfy_server,
+            )
+        else:
+            _notify_ntfy(
+                ntfy_topic,
+                title="DGT scraper failed",
+                message=(
+                    f"Aborted on year {failed_year}. "
+                    f"Fetched so far: {total_fetched} | Errors: {total_errors}\n"
+                    f"{type(exc_info).__name__}: {exc_info}"
+                ),
+                priority="urgent",
+                server=ntfy_server,
+            )
+
+
+def _notify_ntfy(
+    topic: str | None,
+    title: str,
+    message: str,
+    priority: str = "default",
+    server: str | None = None,
+) -> None:
+    """Send a notification to an ntfy topic. Silently no-ops if topic is falsy."""
+    if not topic:
+        return
+    server = (server or os.environ.get("NTFY_SERVER") or "https://ntfy.sh").rstrip("/")
+    url = f"{server}/{topic}"
+    try:
+        requests.post(
+            url,
+            data=message.encode("utf-8"),
+            headers={"Title": title, "Priority": priority, "Tags": "scroll"},
+            timeout=10,
         )
-        total_fetched += fetched
-        total_errors += errors
-
-    click.echo(f"\nDone. Fetched: {total_fetched} | Errors: {total_errors}")
-
-    # Save metadata
-    _save_metadata(data_path, total_fetched, total_errors)
+    except requests.RequestException as exc:
+        logger.warning("Failed to send ntfy notification: %s", exc)
 
 
 def _save_metadata(data_dir: Path, fetched: int, errors: int) -> None:
