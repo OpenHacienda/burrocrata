@@ -21,3 +21,6 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 include = ["burrocrata*"]
 namespaces = true
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
