@@ -2,6 +2,9 @@
 result
 result-*
 
+# Git worktrees
+.worktrees/
+
 # Python
 __pycache__/
 *.py[cod]
