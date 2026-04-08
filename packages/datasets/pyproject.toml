@@ -1,0 +1,25 @@
+[project]
+name = "burrocrata-datasets"
+version = "0.1.0"
+description = "Dataset builders for burrocrata corpora (HF datasets format)"
+requires-python = ">=3.11"
+dependencies = [
+  "datasets>=2.18.0",
+  "python-frontmatter>=1.1.0",
+  "click>=8.1.0",
+]
+
+[project.scripts]
+burrocrata-datasets = "burrocrata.datasets.cli:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["burrocrata*"]
+namespaces = true
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
