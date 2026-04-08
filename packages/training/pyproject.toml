@@ -1,0 +1,42 @@
+[project]
+name = "burrocrata-training"
+version = "0.1.0"
+description = "Unsloth-based fine-tuning pipeline for burrocrata datasets"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.6",
+  "pyyaml>=6.0",
+  "click>=8.1.0",
+  "datasets>=2.18.0",
+]
+
+[project.scripts]
+burrocrata-train = "burrocrata.training.cli:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["burrocrata*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+"burrocrata.training" = ["configs/*.yaml"]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+# Heavy GPU-side deps. Install with: `uv sync --group heavy`
+# on the training machine.
+heavy = [
+  "torch>=2.3",
+  "transformers>=4.44",
+  "trl>=0.9",
+  "peft>=0.11",
+  "accelerate>=0.33",
+  "bitsandbytes>=0.43; sys_platform == 'linux'",
+  # Unsloth is installed from their index; leave as an opt-in
+  # install the user can do manually per their CUDA version:
+  #   uv pip install unsloth
+]
