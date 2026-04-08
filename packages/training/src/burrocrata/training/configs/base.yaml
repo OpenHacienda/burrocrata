@@ -1,0 +1,31 @@
+# Reference config showing all defaults applied by the pydantic schema.
+# Not used at runtime. Copy-paste as a starting point for new experiments.
+name: REQUIRED
+base_model: REQUIRED
+dataset:
+  source: local          # or "hub"
+  path: datasets/dgt-sft
+  split: train
+  eval_split: validation
+prompt: dgt_sft
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.0
+  target: all-linear
+train:
+  epochs: 1.0
+  lr: 2.0e-4
+  batch_size: 2
+  grad_accum: 8
+  max_seq: 4096
+  seed: 42
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+  logging_steps: 10
+eval:
+  every_steps: 200
+output: experiments/{name}/
+hub:
+  push: false
+  repo: null
