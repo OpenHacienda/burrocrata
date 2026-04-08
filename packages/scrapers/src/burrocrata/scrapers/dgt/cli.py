@@ -12,6 +12,7 @@ import os
 
 import click
 
+from burrocrata.scrapers.core.checkpoint import load_checkpoint, save_checkpoint
 from burrocrata.scrapers.core.notify import notify_ntfy
 
 from .exporter import export_sft_from_markdowns, save_markdown, save_raw_html
@@ -29,21 +30,6 @@ def _setup_logging(verbose: bool) -> None:
         level=level,
         format="%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%H:%M:%S",
-    )
-
-
-def _load_checkpoint(data_dir: Path) -> dict:
-    cp_path = data_dir / "checkpoint.json"
-    if cp_path.exists():
-        return json.loads(cp_path.read_text(encoding="utf-8"))
-    return {}
-
-
-def _save_checkpoint(data_dir: Path, checkpoint: dict) -> None:
-    data_dir.mkdir(parents=True, exist_ok=True)
-    cp_path = data_dir / "checkpoint.json"
-    cp_path.write_text(
-        json.dumps(checkpoint, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
 
@@ -172,7 +158,7 @@ def _fetch_year(
     if existing is None:
         existing = _existing_numeros(data_dir) if not force else set()
     if checkpoint is None:
-        checkpoint = _load_checkpoint(data_dir)
+        checkpoint = load_checkpoint(data_dir)
 
     entries = _build_search_index(session, year, data_dir)
     total_results = len(entries)
@@ -205,7 +191,7 @@ def _fetch_year(
     if not work:
         logger.info("[%d] All %d consultas already downloaded", year, total_results)
         checkpoint.pop(cp_key, None)
-        _save_checkpoint(data_dir, checkpoint)
+        save_checkpoint(data_dir, checkpoint)
         return 0, 0
 
     logger.info(
@@ -261,7 +247,7 @@ def _fetch_year(
 
             if (work_pos + 1) % 20 == 0:
                 checkpoint[cp_key] = {"doc_idx": idx + 1}
-                _save_checkpoint(data_dir, checkpoint)
+                save_checkpoint(data_dir, checkpoint)
     else:
         # Concurrent path — pipeline requests to overlap network latency
         with ThreadPoolExecutor(max_workers=concurrency) as pool:
@@ -302,7 +288,7 @@ def _fetch_year(
 
     # Clear checkpoint for this year on success
     checkpoint.pop(cp_key, None)
-    _save_checkpoint(data_dir, checkpoint)
+    save_checkpoint(data_dir, checkpoint)
 
     return fetched, errors
 
@@ -412,7 +398,7 @@ def fetch(
         years = list(range(1997, date.today().year + 1))
 
     existing = _existing_numeros(data_path) if not force else set()
-    checkpoint = _load_checkpoint(data_path)
+    checkpoint = load_checkpoint(data_path)
 
     total_fetched = 0
     total_errors = 0
