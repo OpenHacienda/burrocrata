@@ -27,6 +27,10 @@ pkgs.mkShell {
   # Keep the shell tidy: don't leak Python bytecode into the repo.
   env = {
     PYTHONDONTWRITEBYTECODE = "1";
+    # uv-installed wheels (numpy, pyarrow, …) are linked against a system
+    # libstdc++. Expose the one from this stdenv so `uv run` works without
+    # a manual LD_LIBRARY_PATH dance.
+    LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib";
   };
 
   shellHook = ''
