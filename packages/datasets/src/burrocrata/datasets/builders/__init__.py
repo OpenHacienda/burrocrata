@@ -16,9 +16,7 @@ REGISTRY: dict[str, Builder] = {
 
 def get(name: str) -> Builder:
     if name not in REGISTRY:
-        raise KeyError(
-            f"Unknown builder {name!r}. Available: {sorted(REGISTRY)}"
-        )
+        raise KeyError(f"Unknown builder {name!r}. Available: {sorted(REGISTRY)}")
     return REGISTRY[name]
 
 
