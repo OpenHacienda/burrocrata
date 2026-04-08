@@ -41,7 +41,9 @@ def _load_checkpoint(data_dir: Path) -> dict:
 def _save_checkpoint(data_dir: Path, checkpoint: dict) -> None:
     data_dir.mkdir(parents=True, exist_ok=True)
     cp_path = data_dir / "checkpoint.json"
-    cp_path.write_text(json.dumps(checkpoint, ensure_ascii=False, indent=2), encoding="utf-8")
+    cp_path.write_text(
+        json.dumps(checkpoint, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def _load_search_index(data_dir: Path, year: int) -> list[dict] | None:
@@ -113,7 +115,9 @@ def _build_search_index(
 
     logger.info(
         "[%d] Building search index: %d results across %d pages",
-        year, page_data.total_results, total_pages,
+        year,
+        page_data.total_results,
+        total_pages,
     )
 
     entries: list[dict] = []
@@ -203,7 +207,13 @@ def _fetch_year(
         _save_checkpoint(data_dir, checkpoint)
         return 0, 0
 
-    logger.info("[%d] %d to fetch, %d skipped (concurrency=%d)", year, len(work), skipped, concurrency)
+    logger.info(
+        "[%d] %d to fetch, %d skipped (concurrency=%d)",
+        year,
+        len(work),
+        skipped,
+        concurrency,
+    )
 
     # Thread-safe counters
     lock = threading.Lock()
@@ -228,10 +238,15 @@ def _fetch_year(
         for work_pos, (idx, entry) in enumerate(work):
             try:
                 numero, err = _fetch_one_doc(
-                    session, entry["doc_id"], entry["numero"], data_dir,
+                    session,
+                    entry["doc_id"],
+                    entry["numero"],
+                    data_dir,
                 )
                 if err or numero is None:
-                    logger.warning(err or f"Document {entry['doc_id']} returned no numero")
+                    logger.warning(
+                        err or f"Document {entry['doc_id']} returned no numero"
+                    )
                     errors += 1
                 else:
                     existing.add(numero)
@@ -253,7 +268,10 @@ def _fetch_year(
             for idx, entry in work:
                 fut = pool.submit(
                     _fetch_one_doc,
-                    session, entry["doc_id"], entry["numero"], data_dir,
+                    session,
+                    entry["doc_id"],
+                    entry["numero"],
+                    data_dir,
                 )
                 future_to_entry[fut] = (idx, entry)
 
@@ -263,7 +281,9 @@ def _fetch_year(
                     numero, err = fut.result()
                     with lock:
                         if err or numero is None:
-                            logger.warning(err or f"Document {entry['doc_id']} returned no numero")
+                            logger.warning(
+                                err or f"Document {entry['doc_id']} returned no numero"
+                            )
                             errors += 1
                         else:
                             existing.add(numero)
@@ -326,13 +346,27 @@ def test(rate_limit: float) -> None:
 
 @cli.command()
 @click.option("--year", type=int, help="Download a specific year")
-@click.option("--all", "fetch_all", is_flag=True, help="Download all years (1997-present)")
-@click.option("--update", is_flag=True, help="Download only the current year (incremental)")
+@click.option(
+    "--all", "fetch_all", is_flag=True, help="Download all years (1997-present)"
+)
+@click.option(
+    "--update", is_flag=True, help="Download only the current year (incremental)"
+)
 @click.option("--data-dir", type=click.Path(), default=str(DEFAULT_DATA_DIR))
-@click.option("--rate-limit", default=1.0, help="Starting requests/sec (AIMD adjusts, default: 1.0)")
-@click.option("--min-rate", default=0.2, help="Minimum requests/sec floor (default: 0.2)")
-@click.option("--max-rate", default=4.0, help="Maximum requests/sec ceiling (default: 4.0)")
-@click.option("--concurrency", default=1, help="Concurrent document fetches (default: 1)")
+@click.option(
+    "--rate-limit",
+    default=1.0,
+    help="Starting requests/sec (AIMD adjusts, default: 1.0)",
+)
+@click.option(
+    "--min-rate", default=0.2, help="Minimum requests/sec floor (default: 0.2)"
+)
+@click.option(
+    "--max-rate", default=4.0, help="Maximum requests/sec ceiling (default: 4.0)"
+)
+@click.option(
+    "--concurrency", default=1, help="Concurrent document fetches (default: 1)"
+)
 @click.option("--force", is_flag=True, help="Re-download even if file exists")
 @click.option(
     "--ntfy-topic",
@@ -369,9 +403,11 @@ def fetch(
         years = [year]
     elif update:
         from datetime import date
+
         years = [date.today().year]
     else:
         from datetime import date
+
         years = list(range(1997, date.today().year + 1))
 
     existing = _existing_numeros(data_path) if not force else set()
@@ -385,8 +421,13 @@ def fetch(
     try:
         for y in years:
             fetched, errors = _fetch_year(
-                session, y, data_path, force=force, existing=existing,
-                checkpoint=checkpoint, concurrency=concurrency,
+                session,
+                y,
+                data_path,
+                force=force,
+                existing=existing,
+                checkpoint=checkpoint,
+                concurrency=concurrency,
             )
             total_fetched += fetched
             total_errors += errors
@@ -399,7 +440,9 @@ def fetch(
             click.echo(f"\nDone. Fetched: {total_fetched} | Errors: {total_errors}")
             _save_metadata(data_path, total_fetched, total_errors)
             year_desc = (
-                f"year {years[0]}" if len(years) == 1 else f"years {years[0]}-{years[-1]}"
+                f"year {years[0]}"
+                if len(years) == 1
+                else f"years {years[0]}-{years[-1]}"
             )
             priority = "high" if total_errors else "default"
             _notify_ntfy(
@@ -448,6 +491,7 @@ def _notify_ntfy(
 
 def _save_metadata(data_dir: Path, fetched: int, errors: int) -> None:
     import datetime
+
     meta_path = data_dir / "metadata.json"
     data_dir.mkdir(parents=True, exist_ok=True)
     # Load existing metadata to accumulate lifetime stats
@@ -462,12 +506,19 @@ def _save_metadata(data_dir: Path, fetched: int, errors: int) -> None:
     meta["last_errors"] = errors
     meta["lifetime_fetched"] = meta.get("lifetime_fetched", 0) + fetched
     meta["lifetime_errors"] = meta.get("lifetime_errors", 0) + errors
-    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    meta_path.write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 @cli.command("export-sft")
 @click.option("--data-dir", type=click.Path(), default=str(DEFAULT_DATA_DIR))
-@click.option("--output", "-o", type=click.Path(), default=str(DEFAULT_DATA_DIR / "sft_dataset.jsonl"))
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    default=str(DEFAULT_DATA_DIR / "sft_dataset.jsonl"),
+)
 def export_sft(data_dir: str, output: str) -> None:
     """Export downloaded consultas to JSONL for SFT fine-tuning."""
     count = export_sft_from_markdowns(Path(data_dir), Path(output))

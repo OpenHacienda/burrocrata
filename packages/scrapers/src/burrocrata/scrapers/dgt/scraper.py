@@ -71,7 +71,9 @@ class TokenBucket:
                 self._tokens -= 1
                 sleep_time = 0.0
         if sleep_time > 0:
-            logger.debug("Rate limit: sleeping %.2fs (rate=%.2f/s)", sleep_time, self.rate)
+            logger.debug(
+                "Rate limit: sleeping %.2fs (rate=%.2f/s)", sleep_time, self.rate
+            )
             time.sleep(sleep_time)
             with self._lock:
                 self._last = time.monotonic()
@@ -80,7 +82,10 @@ class TokenBucket:
         """Additive increase after a streak of successes."""
         with self._lock:
             self._success_streak += 1
-            if self._success_streak >= self.success_threshold and self.rate < self.max_rate:
+            if (
+                self._success_streak >= self.success_threshold
+                and self.rate < self.max_rate
+            ):
                 old = self.rate
                 self.rate = min(self.max_rate, self.rate + self.aimd_step)
                 self._success_streak = 0
@@ -93,7 +98,9 @@ class TokenBucket:
             if self.rate > self.min_rate:
                 old = self.rate
                 self.rate = max(self.min_rate, self.rate * 0.5)
-                logger.warning("AIMD: rate %.2f -> %.2f/s (server pressure)", old, self.rate)
+                logger.warning(
+                    "AIMD: rate %.2f -> %.2f/s (server pressure)", old, self.rate
+                )
 
 
 class DGTSession:
@@ -108,9 +115,7 @@ class DGTSession:
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
         self.session.verify = False
-        self.bucket = TokenBucket(
-            rate=rate_limit, min_rate=min_rate, max_rate=max_rate
-        )
+        self.bucket = TokenBucket(rate=rate_limit, min_rate=min_rate, max_rate=max_rate)
         self._initialized = False
         self._init_lock = threading.Lock()
 
@@ -126,7 +131,9 @@ class DGTSession:
                 except requests.RequestException as exc:
                     if attempt < MAX_RETRIES:
                         wait = RETRY_BACKOFFS[attempt]
-                        logger.warning("Init request error (%s), retrying in %ds…", exc, wait)
+                        logger.warning(
+                            "Init request error (%s), retrying in %ds…", exc, wait
+                        )
                         time.sleep(wait)
                         continue
                     raise
@@ -185,9 +192,7 @@ class DGTSession:
                 self.bucket.record_failure()
                 if attempt < MAX_RETRIES:
                     wait = self._backoff(attempt, resp)
-                    logger.warning(
-                        "Got %d, retrying in %.1fs…", resp.status_code, wait
-                    )
+                    logger.warning("Got %d, retrying in %.1fs…", resp.status_code, wait)
                     time.sleep(wait)
                     continue
                 resp.raise_for_status()

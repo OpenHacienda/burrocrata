@@ -21,22 +21,24 @@ SFT_SYSTEM_PROMPT = (
 
 def consulta_to_markdown(c: Consulta) -> str:
     """Render a Consulta as a Markdown string with YAML frontmatter."""
-    body = "\n".join([
-        f"# Consulta Vinculante {c.numero}",
-        "",
-        "## Descripcion de hechos",
-        "",
-        c.hechos,
-        "",
-        "## Cuestion planteada",
-        "",
-        c.cuestion,
-        "",
-        "## Contestacion",
-        "",
-        c.contestacion,
-        "",
-    ])
+    body = "\n".join(
+        [
+            f"# Consulta Vinculante {c.numero}",
+            "",
+            "## Descripcion de hechos",
+            "",
+            c.hechos,
+            "",
+            "## Cuestion planteada",
+            "",
+            c.cuestion,
+            "",
+            "## Contestacion",
+            "",
+            c.contestacion,
+            "",
+        ]
+    )
     post = frontmatter.Post(
         body,
         numero=c.numero,
@@ -141,7 +143,11 @@ def _parse_markdown(path: Path) -> Consulta | None:
     # Convert fecha back to DD/MM/YYYY for Consulta
     fecha_iso = str(fm.get("fecha", ""))
     fecha_parts = fecha_iso.split("-")
-    fecha = f"{fecha_parts[2]}/{fecha_parts[1]}/{fecha_parts[0]}" if len(fecha_parts) == 3 else fecha_iso
+    fecha = (
+        f"{fecha_parts[2]}/{fecha_parts[1]}/{fecha_parts[0]}"
+        if len(fecha_parts) == 3
+        else fecha_iso
+    )
 
     return Consulta(
         numero=str(fm.get("numero", "")),

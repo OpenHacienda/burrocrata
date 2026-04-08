@@ -86,7 +86,9 @@ def parse_search_results(html_content: str) -> SearchPage:
         numero = ""
         if num_span:
             strong = num_span.find("strong")
-            numero = (strong.get_text(strip=True) if strong else num_span.get_text(strip=True))
+            numero = (
+                strong.get_text(strip=True) if strong else num_span.get_text(strip=True)
+            )
 
         hechos_span = container.find("span", class_="DESCRIPCION-HECHOS")
         preview_hechos = hechos_span.get_text(strip=True) if hechos_span else ""
@@ -108,10 +110,14 @@ def parse_search_results(html_content: str) -> SearchPage:
         for m in doc_pattern.finditer(html_content):
             doc_id = m.group(1)
             results.append(
-                SearchResult(doc_id=doc_id, numero="", preview_hechos="", preview_cuestion="")
+                SearchResult(
+                    doc_id=doc_id, numero="", preview_hechos="", preview_cuestion=""
+                )
             )
 
-    return SearchPage(total_results=total_results, total_pages=total_pages, results=results)
+    return SearchPage(
+        total_results=total_results, total_pages=total_pages, results=results
+    )
 
 
 def _extract_multi_paragraph(soup: BeautifulSoup, class_name: str) -> str:
