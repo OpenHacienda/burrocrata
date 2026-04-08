@@ -15,7 +15,7 @@ import click
 from burrocrata.scrapers.core.checkpoint import load_checkpoint, save_checkpoint
 from burrocrata.scrapers.core.notify import notify_ntfy
 
-from .exporter import export_sft_from_markdowns, save_markdown, save_raw_html
+from .exporter import save_markdown, save_raw_html
 from .parser import parse_document, parse_search_results
 from .scraper import DGTSession
 
@@ -473,20 +473,6 @@ def _save_metadata(data_dir: Path, fetched: int, errors: int) -> None:
     meta_path.write_text(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-
-
-@cli.command("export-sft")
-@click.option("--data-dir", type=click.Path(), default=str(DEFAULT_DATA_DIR))
-@click.option(
-    "--output",
-    "-o",
-    type=click.Path(),
-    default=str(DEFAULT_DATA_DIR / "sft_dataset.jsonl"),
-)
-def export_sft(data_dir: str, output: str) -> None:
-    """Export downloaded consultas to JSONL for SFT fine-tuning."""
-    count = export_sft_from_markdowns(Path(data_dir), Path(output))
-    click.echo(f"Exported {count} examples to {output}")
 
 
 @cli.command()
