@@ -55,9 +55,5 @@ def get_splits(
     if isinstance(dsd, Dataset):
         return dsd, None
     train = dsd[cfg.split]
-    eval_ds = (
-        dsd[cfg.eval_split]
-        if cfg.eval_split and cfg.eval_split in dsd
-        else None
-    )
+    eval_ds = dsd[cfg.eval_split] if cfg.eval_split and cfg.eval_split in dsd else None
     return train, eval_ds

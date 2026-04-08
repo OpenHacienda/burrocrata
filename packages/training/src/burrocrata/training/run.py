@@ -44,9 +44,7 @@ def _git_sha_and_dirty() -> tuple[str, bool]:
 
 
 def _timestamp() -> str:
-    return datetime.datetime.now(datetime.timezone.utc).strftime(
-        "%Y-%m-%dT%H-%M-%SZ"
-    )
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
 
 
 @dataclass
@@ -58,9 +56,7 @@ class RunContext:
     git_dirty: bool
     dataset_fingerprint: str | None
     started_at: str = field(
-        default_factory=lambda: datetime.datetime.now(
-            datetime.timezone.utc
-        ).isoformat()
+        default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat()
     )
 
 
@@ -120,7 +116,5 @@ def prepare_run(config: Config, now: str | None = None) -> RunContext:
 def write_metrics(ctx: RunContext, metrics: dict) -> Path:
     """Persist final training metrics after the loop completes."""
     p = ctx.output_dir / "metrics.json"
-    p.write_text(
-        json.dumps(metrics, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    p.write_text(json.dumps(metrics, indent=2, ensure_ascii=False), encoding="utf-8")
     return p

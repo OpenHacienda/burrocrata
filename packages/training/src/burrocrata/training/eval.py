@@ -59,8 +59,6 @@ def run(config: Config, adapter_dir: Path) -> dict:
     ppl = math.exp(loss) if not math.isnan(loss) else float("nan")
     out = {"eval_loss": loss, "eval_ppl": ppl}
 
-    (adapter_dir / "eval.json").write_text(
-        json.dumps(out, indent=2), encoding="utf-8"
-    )
+    (adapter_dir / "eval.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
     logger.info("Eval: loss=%.4f ppl=%.3f", loss, ppl)
     return out

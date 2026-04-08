@@ -13,9 +13,7 @@ logger = logging.getLogger(__name__)
 def run(config: Config, source_dir: Path) -> str:
     """Upload ``source_dir`` to ``config.hub.repo``. Returns the repo id."""
     if not config.hub.push or not config.hub.repo:
-        raise RuntimeError(
-            "hub.push is false or hub.repo is unset; nothing to push"
-        )
+        raise RuntimeError("hub.push is false or hub.repo is unset; nothing to push")
     from huggingface_hub import HfApi
 
     api = HfApi()

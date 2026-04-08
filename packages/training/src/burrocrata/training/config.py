@@ -70,7 +70,9 @@ class Config(BaseModel):
     name: str = Field(..., description="Experiment name; used in output path")
     base_model: str
     dataset: DatasetConfig
-    prompt: str = Field(..., description="Prompt template name (key in prompts registry)")
+    prompt: str = Field(
+        ..., description="Prompt template name (key in prompts registry)"
+    )
     lora: LoraConfig = Field(default_factory=LoraConfig)
     train: TrainConfig = Field(default_factory=TrainConfig)
     eval: EvalConfig = Field(default_factory=EvalConfig)

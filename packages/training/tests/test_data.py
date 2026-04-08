@@ -40,9 +40,7 @@ def test_get_splits_returns_train_and_eval(tmp_path):
 
 def test_get_splits_no_eval_when_missing(tmp_path):
     path = _make_local_dataset(tmp_path)
-    cfg = DatasetConfig(
-        source="local", path=str(path), eval_split="nonexistent"
-    )
+    cfg = DatasetConfig(source="local", path=str(path), eval_split="nonexistent")
     dsd = load_dataset_for_config(cfg)
     _, eval_ds = get_splits(dsd, cfg)
     assert eval_ds is None
