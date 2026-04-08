@@ -19,7 +19,7 @@ from .scraper import DGTSession
 
 DEFAULT_DATA_DIR = Path("data/dgt")
 
-logger = logging.getLogger("scraper.dgt")
+logger = logging.getLogger("burrocrata.scrapers.dgt")
 
 
 def _setup_logging(verbose: bool) -> None:

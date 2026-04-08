@@ -1,7 +1,7 @@
 [project]
-name = "scrapper-dgt"
+name = "burrocrata-scrapers"
 version = "0.1.0"
-description = "Scraper for DGT consultas vinculantes from PETETE"
+description = "Scrapers for Spanish tax/legal sources (DGT, ...)"
 requires-python = ">=3.11"
 dependencies = [
   "requests>=2.31.0",
@@ -11,12 +11,13 @@ dependencies = [
 ]
 
 [project.scripts]
-scrapper-dgt = "scraper.dgt.cli:main"
+burrocrata-dgt = "burrocrata.scrapers.dgt.cli:main"
 
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["scraper*"]
+where = ["src"]
+include = ["burrocrata*"]
+namespaces = true
